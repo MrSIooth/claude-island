@@ -64,12 +64,18 @@ struct ClaudeCrabIcon: View {
         self.timeAccessory = timeAccessory
     }
 
+    /// Extra internal-coord units above the body for accessories (nightcap extends to y ≈ -23)
+    private var topPadding: CGFloat {
+        timeAccessory == .nightcap ? 24 : 0
+    }
+
     var body: some View {
         Canvas { context, canvasSize in
             let scale = size / 52.0
+            let pad = topPadding
             let xOffset = (canvasSize.width - 66 * scale) / 2
             let tx = CGAffineTransform(scaleX: scale, y: scale)
-                .translatedBy(x: xOffset / scale, y: 0)
+                .translatedBy(x: xOffset / scale, y: pad)
 
             func fill(_ r: CGRect, _ c: Color) {
                 context.fill(Path { p in p.addRect(r) }.applying(tx), with: .color(c))
@@ -182,7 +188,7 @@ struct ClaudeCrabIcon: View {
                 drawSunglasses(fill: fill, eyeShift: s)
             }
         }
-        .frame(width: size * (66.0 / 52.0), height: size)
+        .frame(width: size * (66.0 / 52.0), height: (52.0 + topPadding) * size / 52.0)
         .onReceive(animTimer) { _ in
             if animateLegs {
                 bookPhase = (bookPhase + 1) % 8
@@ -267,18 +273,20 @@ struct ClaudeCrabIcon: View {
     // MARK: - Accessory Drawing
 
     private func drawNightcap(fill: (CGRect, Color) -> Void) {
-        let capColor = Color(red: 0.15, green: 0.15, blue: 0.45)   // dark blue
-        let brimColor = Color(red: 0.1, green: 0.1, blue: 0.35)    // darker brim
-        let pompom = Color.white
+        let white = Color.white
+        let stripe = Color(red: 0.35, green: 0.5, blue: 1.0)        // blue stripe
 
-        // Brim along the top of the head
-        fill(CGRect(x: 30, y: -2, width: 28, height: 4), brimColor)
-        // Cap body — droops to the right
-        fill(CGRect(x: 36, y: -8, width: 18, height: 6), capColor)
-        fill(CGRect(x: 44, y: -14, width: 14, height: 6), capColor)
-        fill(CGRect(x: 50, y: -19, width: 10, height: 5), capColor)
+        // Brim across the full head (sits above the body, no overlap)
+        fill(CGRect(x: 6, y: -3, width: 54, height: 3), white)
+        // Cap body — gradual taper, drifts to the right
+        fill(CGRect(x: 16, y: -6, width: 42, height: 3), stripe)
+        fill(CGRect(x: 21, y: -9, width: 36, height: 3), white)
+        fill(CGRect(x: 26, y: -12, width: 30, height: 3), stripe)
+        fill(CGRect(x: 31, y: -15, width: 24, height: 3), white)
+        fill(CGRect(x: 36, y: -18, width: 18, height: 3), stripe)
+        fill(CGRect(x: 41, y: -21, width: 12, height: 3), white)
         // Pompom at drooping tip
-        fill(CGRect(x: 56, y: -23, width: 6, height: 6), pompom)
+        fill(CGRect(x: 48, y: -24, width: 5, height: 5), white)
     }
 
     private func drawSunglasses(fill: (CGRect, Color) -> Void, eyeShift s: CGFloat) {
