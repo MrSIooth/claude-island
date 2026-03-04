@@ -118,7 +118,7 @@ struct MascotCanvasView: View {
     @ViewBuilder
     private var notchBar: some View {
         let sessions = visibleSessions
-        let barWidth = viewModel.mascotBarWidth
+        let barWidth = viewModel.mascotBarWidth(sessionCount: sessions.count)
         let barHeight = max(32, notchRect.height)
 
         ZStack {
@@ -171,6 +171,7 @@ struct MascotCanvasView: View {
     // MARK: - Instance Change Handling
 
     private func handleInstancesChange(_ instances: [SessionState]) {
+        viewModel.sessionCount = visibleSessions.count
         trackEndedSessions(instances)
         handleWaitingForInputSound(instances)
         autoShowBubblesForApproval(instances)
@@ -271,8 +272,8 @@ struct MascotCanvasView: View {
     private func sessionForClickLocation(_ screenLocation: CGPoint, sessions: [SessionState]) -> SessionState? {
         guard !sessions.isEmpty else { return nil }
 
-        let barScreenRect = viewModel.geometry.mascotBarScreenRect
-        let notchCenterX = barScreenRect.midX
+        let barWidth = viewModel.mascotBarWidth(sessionCount: sessions.count)
+        let notchCenterX = viewModel.geometry.screenRect.midX
         let mascotHitWidth: CGFloat = 28 // generous hit area per mascot
 
         // For a single session, the mascot is centered

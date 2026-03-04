@@ -32,20 +32,14 @@ struct NotchGeometry: Sendable {
         )
     }
 
-    /// The full mascot bar rect in screen coordinates, wider on physical notch screens
-    /// to include the ear areas where mascots are placed.
-    var mascotBarScreenRect: CGRect {
-        if hasPhysicalNotch {
-            let earWidth = (screenRect.width - deviceNotchRect.width) / 2
-            let barWidth = deviceNotchRect.width + earWidth * 2 * 0.6
-            return CGRect(
-                x: screenRect.midX - barWidth / 2,
-                y: screenRect.maxY - deviceNotchRect.height,
-                width: barWidth,
-                height: deviceNotchRect.height
-            )
-        }
-        return notchScreenRect
+    /// The mascot bar rect in screen coordinates for a given bar width.
+    func mascotBarScreenRect(barWidth: CGFloat) -> CGRect {
+        CGRect(
+            x: screenRect.midX - barWidth / 2,
+            y: screenRect.maxY - deviceNotchRect.height,
+            width: barWidth,
+            height: deviceNotchRect.height
+        )
     }
 
     /// The opened panel rect in screen coordinates for a given size
@@ -62,8 +56,8 @@ struct NotchGeometry: Sendable {
     }
 
     /// Check if a point is in the notch/mascot bar area (with padding for easier interaction)
-    func isPointInNotch(_ point: CGPoint) -> Bool {
-        mascotBarScreenRect.insetBy(dx: -10, dy: -5).contains(point)
+    func isPointInNotch(_ point: CGPoint, barWidth: CGFloat) -> Bool {
+        mascotBarScreenRect(barWidth: barWidth).insetBy(dx: -10, dy: -5).contains(point)
     }
 
     /// Check if a point is in the opened panel area

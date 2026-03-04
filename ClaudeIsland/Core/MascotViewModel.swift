@@ -19,6 +19,9 @@ class MascotViewModel: ObservableObject {
     /// Whether the bubble is expanded to show full details
     @Published var isBubbleExpanded: Bool = false
 
+    /// Current session count — updated by canvas view, used for dynamic bar width in hit testing
+    var sessionCount: Int = 0
+
     // MARK: - Dependencies
 
     let geometry: NotchGeometry
@@ -91,20 +94,20 @@ class MascotViewModel: ObservableObject {
         }
     }
 
+    private var currentBarWidth: CGFloat {
+        mascotBarWidth(sessionCount: sessionCount)
+    }
+
     private func handleMouseDown() {
         let location = NSEvent.mouseLocation
-        if geometry.isPointInNotch(location) {
+        if geometry.isPointInNotch(location, barWidth: currentBarWidth) {
             onNotchClick?(location)
         }
-        // Don't dismiss bubble here — the local monitor also fires for clicks on
-        // our own window (including bubble buttons). Dismiss is handled by:
-        // 1. NotchPanel.sendEvent → onClickOutsideBubble (clicks in window, outside bubble)
-        // 2. globalClickMonitor (clicks on other apps)
     }
 
     private func handleRightMouseDown() {
         let location = NSEvent.mouseLocation
-        if geometry.isPointInNotch(location) {
+        if geometry.isPointInNotch(location, barWidth: currentBarWidth) {
             onNotchRightClick?(location)
         }
     }
@@ -152,18 +155,24 @@ class MascotViewModel: ObservableObject {
         }
     }
 
-    /// The display width needed for the mascot bar, accounting for ear zones on physical notch screens.
-    var mascotBarWidth: CGFloat {
+    /// The display width needed for the mascot bar.
+    /// On virtual notch screens, grows to fit all mascots.
+    /// On physical notch screens, extends into the ear areas.
+    func mascotBarWidth(sessionCount: Int) -> CGFloat {
         if hasPhysicalNotch {
-            // Extend well beyond the physical notch into both ear areas
             let screenWidth = geometry.screenRect.width
             let physicalNotchWidth = geometry.deviceNotchRect.width
-            // Use the full menu bar width (ear to ear) — the area between the Apple menu and status icons
-            // Each ear is (screenWidth - physicalNotchWidth) / 2, we take most of it
             let earWidth = (screenWidth - physicalNotchWidth) / 2
-            return physicalNotchWidth + earWidth * 2 * 0.6
+            let baseWidth = physicalNotchWidth + earWidth * 2 * 0.6
+            // Grow if many sessions need more space
+            let neededWidth = physicalNotchWidth + CGFloat(sessionCount) * 24 + 40
+            return max(baseWidth, neededWidth)
         }
-        return geometry.deviceNotchRect.width
+        let baseWidth = geometry.deviceNotchRect.width
+        guard sessionCount > 1 else { return baseWidth }
+        let spacing: CGFloat = 28
+        let neededWidth = CGFloat(sessionCount) * spacing + 40
+        return max(baseWidth, neededWidth)
     }
 
     // MARK: - Bubble Management
