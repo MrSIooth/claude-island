@@ -12,81 +12,92 @@ struct ClaudeCrabIcon: View {
     let size: CGFloat
     let color: Color
     var animateLegs: Bool = false
+    var sleeping: Bool = false
 
-    @State private var legPhase: Int = 0
+    @State private var bookPhase: Int = 0
 
-    // Timer for leg animation
-    private let legTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
+    private let animTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
-    init(size: CGFloat = 16, color: Color = Color(red: 0.85, green: 0.47, blue: 0.34), animateLegs: Bool = false) {
+    init(size: CGFloat = 16, color: Color = Color(red: 0.85, green: 0.47, blue: 0.34), animateLegs: Bool = false, sleeping: Bool = false) {
         self.size = size
         self.color = color
         self.animateLegs = animateLegs
+        self.sleeping = sleeping
     }
 
     var body: some View {
         Canvas { context, canvasSize in
-            let scale = size / 52.0  // Original viewBox height is 52
+            let scale = size / 52.0
             let xOffset = (canvasSize.width - 66 * scale) / 2
+            let tx = CGAffineTransform(scaleX: scale, y: scale)
+                .translatedBy(x: xOffset / scale, y: 0)
 
-            // Left antenna
-            let leftAntenna = Path { p in
-                p.addRect(CGRect(x: 0, y: 13, width: 6, height: 13))
-            }.applying(CGAffineTransform(scaleX: scale, y: scale).translatedBy(x: xOffset / scale, y: 0))
-            context.fill(leftAntenna, with: .color(color))
+            func fill(_ r: CGRect, _ c: Color) {
+                context.fill(Path { p in p.addRect(r) }.applying(tx), with: .color(c))
+            }
 
-            // Right antenna
-            let rightAntenna = Path { p in
-                p.addRect(CGRect(x: 60, y: 13, width: 6, height: 13))
-            }.applying(CGAffineTransform(scaleX: scale, y: scale).translatedBy(x: xOffset / scale, y: 0))
-            context.fill(rightAntenna, with: .color(color))
+            // Antennae
+            fill(CGRect(x: 0, y: 13, width: 6, height: 13), color)
+            fill(CGRect(x: 60, y: 13, width: 6, height: 13), color)
 
-            // Animated legs - alternating up/down pattern for walking effect
-            // Legs stay attached to body (y=39), only height changes
-            let baseLegPositions: [CGFloat] = [6, 18, 42, 54]
-            let baseLegHeight: CGFloat = 13
+            // Outer legs (always static)
+            fill(CGRect(x: 6, y: 39, width: 6, height: 13), color)
+            fill(CGRect(x: 54, y: 39, width: 6, height: 13), color)
 
-            // Height offsets: positive = longer leg (down), negative = shorter leg (up)
-            let legHeightOffsets: [[CGFloat]] = [
-                [3, -3, 3, -3],   // Phase 0: alternating
-                [0, 0, 0, 0],     // Phase 1: neutral
-                [-3, 3, -3, 3],   // Phase 2: alternating (opposite)
-                [0, 0, 0, 0],     // Phase 3: neutral
-            ]
-
-            let currentHeightOffsets = animateLegs ? legHeightOffsets[legPhase % 4] : [CGFloat](repeating: 0, count: 4)
-
-            for (index, xPos) in baseLegPositions.enumerated() {
-                let heightOffset = currentHeightOffsets[index]
-                let legHeight = baseLegHeight + heightOffset
-                let leg = Path { p in
-                    p.addRect(CGRect(x: xPos, y: 39, width: 6, height: legHeight))
-                }.applying(CGAffineTransform(scaleX: scale, y: scale).translatedBy(x: xOffset / scale, y: 0))
-                context.fill(leg, with: .color(color))
+            if animateLegs {
+                // Inner legs shortened — crab "arms" holding the book
+                fill(CGRect(x: 18, y: 39, width: 6, height: 5), color)
+                fill(CGRect(x: 42, y: 39, width: 6, height: 5), color)
+            } else {
+                // Normal inner legs
+                fill(CGRect(x: 18, y: 39, width: 6, height: 13), color)
+                fill(CGRect(x: 42, y: 39, width: 6, height: 13), color)
             }
 
             // Main body
-            let body = Path { p in
-                p.addRect(CGRect(x: 6, y: 0, width: 54, height: 39))
-            }.applying(CGAffineTransform(scaleX: scale, y: scale).translatedBy(x: xOffset / scale, y: 0))
-            context.fill(body, with: .color(color))
+            fill(CGRect(x: 6, y: 0, width: 54, height: 39), color)
 
-            // Left eye
-            let leftEye = Path { p in
-                p.addRect(CGRect(x: 12, y: 13, width: 6, height: 6.5))
-            }.applying(CGAffineTransform(scaleX: scale, y: scale).translatedBy(x: xOffset / scale, y: 0))
-            context.fill(leftEye, with: .color(.black))
+            // Book (processing state only)
+            if animateLegs {
+                let pageColor = Color(white: 0.82)
+                let spineColor = Color(red: 0.35, green: 0.22, blue: 0.12)
+                let flipColor = Color(white: 0.95)
+                let bookY: CGFloat = 34
+                let bookH: CGFloat = 18
 
-            // Right eye
-            let rightEye = Path { p in
-                p.addRect(CGRect(x: 48, y: 13, width: 6, height: 6.5))
-            }.applying(CGAffineTransform(scaleX: scale, y: scale).translatedBy(x: xOffset / scale, y: 0))
-            context.fill(rightEye, with: .color(.black))
+                // Left page
+                fill(CGRect(x: 16, y: bookY, width: 16, height: bookH), pageColor)
+                // Right page
+                fill(CGRect(x: 36, y: bookY, width: 16, height: bookH), pageColor)
+                // Spine
+                fill(CGRect(x: 32, y: bookY - 2, width: 4, height: bookH + 4), spineColor)
+
+                // Turning page — arcs from right over the spine to the left
+                switch bookPhase {
+                case 0, 1: break // rest
+                case 2: fill(CGRect(x: 37, y: bookY - 4, width: 14, height: bookH), flipColor)
+                case 3: fill(CGRect(x: 35, y: bookY - 7, width: 8,  height: bookH), flipColor)
+                case 4: fill(CGRect(x: 32, y: bookY - 9, width: 4,  height: bookH), flipColor)
+                case 5: fill(CGRect(x: 25, y: bookY - 7, width: 8,  height: bookH), flipColor)
+                case 6: fill(CGRect(x: 17, y: bookY - 4, width: 14, height: bookH), flipColor)
+                case 7: break // rest
+                default: break
+                }
+            }
+
+            // Eyes — flat lines when sleeping, squares when awake
+            if sleeping {
+                fill(CGRect(x: 12, y: 16, width: 8, height: 2), .black)
+                fill(CGRect(x: 46, y: 16, width: 8, height: 2), .black)
+            } else {
+                fill(CGRect(x: 12, y: 13, width: 6, height: 6.5), .black)
+                fill(CGRect(x: 48, y: 13, width: 6, height: 6.5), .black)
+            }
         }
         .frame(width: size * (66.0 / 52.0), height: size)
-        .onReceive(legTimer) { _ in
+        .onReceive(animTimer) { _ in
             if animateLegs {
-                legPhase = (legPhase + 1) % 4
+                bookPhase = (bookPhase + 1) % 8
             }
         }
     }

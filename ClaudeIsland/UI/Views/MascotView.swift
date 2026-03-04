@@ -17,8 +17,12 @@ struct MascotView: View {
     @State private var bounceOffset: CGFloat = 0
     @State private var pulseOpacity: Double = 1.0
     @State private var fadeOpacity: Double = 1.0
+    @State private var isSleeping: Bool = false
+    @State private var sleepTask: Task<Void, Never>?
+    @State private var zzzPhase: Int = 0
 
     private let mascotSize: CGFloat = 16
+    private let sleepDelay: TimeInterval = 10
 
     // MARK: - State-derived properties
 
@@ -70,16 +74,102 @@ struct MascotView: View {
     // MARK: - Body
 
     var body: some View {
-        ClaudeCrabIcon(size: mascotSize, color: crabColor, animateLegs: animateLegs)
-            .opacity(mascotOpacity)
-            .shadow(color: glowColor?.opacity(0.6) ?? .clear, radius: 6)
-            .offset(x: shakeOffset, y: bounceOffset)
-            .onChange(of: session.phase) { oldPhase, newPhase in
-                handlePhaseChange(from: oldPhase, to: newPhase)
+        ZStack(alignment: .top) {
+            // "?" bubble above mascot when waiting for approval
+            if session.phase.isWaitingForApproval {
+                questionBubble
+                    .offset(y: -14)
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
-            .onAppear {
-                startAnimationsForCurrentPhase()
+
+            // "zzz" floating up when sleeping
+            if isSleeping {
+                zzzOverlay
+                    .offset(x: 8, y: -10)
             }
+
+            ClaudeCrabIcon(size: mascotSize, color: crabColor, animateLegs: animateLegs, sleeping: isSleeping)
+                .opacity(mascotOpacity)
+                .shadow(color: glowColor?.opacity(0.6) ?? .clear, radius: 6)
+        }
+        .offset(x: shakeOffset, y: bounceOffset)
+        .onChange(of: session.phase) { oldPhase, newPhase in
+            handlePhaseChange(from: oldPhase, to: newPhase)
+        }
+        .onAppear {
+            startAnimationsForCurrentPhase()
+            startSleepTimerIfNeeded()
+        }
+        .onDisappear {
+            sleepTask?.cancel()
+        }
+    }
+
+    // MARK: - Question Bubble
+
+    private var questionBubble: some View {
+        Text("?")
+            .font(.system(size: 9, weight: .black, design: .rounded))
+            .foregroundColor(.black)
+            .frame(width: 12, height: 12)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(TerminalColors.amber)
+            )
+    }
+
+    // MARK: - Zzz Overlay
+
+    private var zzzOverlay: some View {
+        TimelineView(.animation(minimumInterval: 0.6)) { timeline in
+            let phase = Int(timeline.date.timeIntervalSinceReferenceDate / 0.6) % 3
+            ZStack {
+                Text("z")
+                    .font(.system(size: 6, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.5))
+                    .offset(x: -2, y: phase >= 1 ? -2 : 0)
+                    .opacity(phase >= 1 ? 1 : 0)
+                Text("z")
+                    .font(.system(size: 5, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.35))
+                    .offset(x: 2, y: phase >= 2 ? -7 : -5)
+                    .opacity(phase >= 2 ? 1 : 0)
+                Text("z")
+                    .font(.system(size: 7, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.6))
+                    .offset(x: 0, y: 2)
+            }
+            .animation(.easeInOut(duration: 0.5), value: phase)
+        }
+    }
+
+    // MARK: - Sleep Timer
+
+    private func startSleepTimerIfNeeded() {
+        if session.phase == .idle {
+            scheduleSleep()
+        }
+    }
+
+    private func scheduleSleep() {
+        sleepTask?.cancel()
+        sleepTask = Task {
+            try? await Task.sleep(for: .seconds(sleepDelay))
+            guard !Task.isCancelled, session.phase == .idle else { return }
+            withAnimation(.easeInOut(duration: 0.5)) {
+                isSleeping = true
+            }
+        }
+    }
+
+    private func wakeUp() {
+        sleepTask?.cancel()
+        sleepTask = nil
+        if isSleeping {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                isSleeping = false
+            }
+        }
     }
 
     // MARK: - Phase Animations
@@ -87,21 +177,28 @@ struct MascotView: View {
     private func handlePhaseChange(from oldPhase: SessionPhase, to newPhase: SessionPhase) {
         switch newPhase {
         case .waitingForApproval:
+            wakeUp()
             startShakeAnimation()
-            // Bubble auto-show is handled by autoShowBubblesForApproval in MascotCanvasView
-            // so it respects the "seen" tracking and doesn't re-open after user dismiss.
 
         case .waitingForInput:
+            wakeUp()
             startBounceAnimation()
 
         case .compacting:
+            wakeUp()
             startPulseAnimation()
 
         case .ended:
+            wakeUp()
             startFadeOutAnimation()
 
-        default:
+        case .processing:
+            wakeUp()
             resetAnimations()
+
+        case .idle:
+            resetAnimations()
+            scheduleSleep()
         }
     }
 
