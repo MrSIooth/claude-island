@@ -36,7 +36,7 @@ class MascotViewController: NSViewController {
             let notchWidth = geometry.deviceNotchRect.width
 
             // Bubble is centered below the notch, ~250px wide, up to 300px tall
-            let bubbleWidth: CGFloat = max(notchWidth, 280)
+            let bubbleWidth: CGFloat = max(notchWidth, 410)
             let bubbleHeight: CGFloat = 280
             let centerX = screenWidth / 2
 

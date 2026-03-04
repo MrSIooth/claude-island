@@ -283,10 +283,10 @@ struct MascotCanvasView: View {
     }
 
     /// Compute bubble x-offset that follows the mascot but stays on screen.
-    /// The bubble is 250px wide and centered on screen by default, so we clamp
+    /// The bubble is 350px wide and centered on screen by default, so we clamp
     /// the offset so neither edge goes past the screen bounds.
     private func bubbleXOffset(for mascotOffset: CGFloat) -> CGFloat {
-        let bubbleWidth: CGFloat = 250
+        let bubbleWidth: CGFloat = 380
         let screenWidth = viewModel.geometry.screenRect.width
         // Max offset before bubble edge hits screen edge (with some padding)
         let maxOffset = (screenWidth - bubbleWidth) / 2 - 16

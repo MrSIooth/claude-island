@@ -54,6 +54,13 @@ struct PermissionBubbleView: View {
         }
     }
 
+    /// Keys that carry verbose content — Claude already explains the change in the terminal
+    private static let verboseKeys: Set<String> = [
+        "old_string", "new_string", "content", "new_source",
+        "description", "prompt", "operations", "timeout",
+        "replace_all",
+    ]
+
     /// Format tool input for display (non-question tools)
     private var inputLines: [InputLine] {
         guard let permission = session.activePermission,
@@ -63,6 +70,9 @@ struct PermissionBubbleView: View {
         if permission.toolName == "AskUserQuestion" { return [] }
 
         return input.sorted(by: { $0.key < $1.key }).compactMap { key, value -> InputLine? in
+            // Skip verbose content keys — the terminal already shows what's changing
+            if Self.verboseKeys.contains(key) { return nil }
+
             let valueStr: String
             switch value.value {
             case let str as String:
@@ -80,7 +90,27 @@ struct PermissionBubbleView: View {
         }
     }
 
-    private let bubbleWidth: CGFloat = 250
+    private let bubbleWidth: CGFloat = 380
+
+    /// Whether this is a plan approval (ExitPlanMode)
+    private var isPlanApproval: Bool {
+        session.activePermission?.toolName == "ExitPlanMode"
+    }
+
+    /// Whether this is an Edit tool
+    private var isEditTool: Bool {
+        session.activePermission?.toolName == "Edit"
+    }
+
+    /// Extract allowed prompts from ExitPlanMode toolInput for display
+    private var planAllowedPrompts: [String] {
+        guard isPlanApproval,
+              let input = session.activePermission?.toolInput,
+              let promptsAny = input["allowedPrompts"]?.value as? [[String: Any]] else {
+            return []
+        }
+        return promptsAny.compactMap { $0["prompt"] as? String }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -95,7 +125,7 @@ struct PermissionBubbleView: View {
                 // Session identifier — project name with colored dot
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(TerminalColors.amber)
+                        .fill(isPlanApproval ? TerminalColors.blue : TerminalColors.amber)
                         .frame(width: 6, height: 6)
                     Text(session.projectName)
                         .font(.system(size: 11, weight: .semibold))
@@ -106,15 +136,19 @@ struct PermissionBubbleView: View {
 
                     Text(toolName)
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundColor(TerminalColors.amber.opacity(0.7))
+                        .foregroundColor(isPlanApproval ? TerminalColors.blue.opacity(0.7) : TerminalColors.amber.opacity(0.7))
                         .lineLimit(1)
                 }
 
                 Divider().background(Color.white.opacity(0.1))
 
-                // Content: questions or tool input
+                // Content: questions, plan prompts, edit diff, or tool input
                 if !questionItems.isEmpty {
                     questionsContent
+                } else if isPlanApproval && !planAllowedPrompts.isEmpty {
+                    planPromptsContent
+                } else if isEditTool {
+                    editDiffContent
                 } else if !inputLines.isEmpty {
                     toolInputContent
                 }
@@ -124,7 +158,7 @@ struct PermissionBubbleView: View {
                     Button {
                         onDeny()
                     } label: {
-                        Text("Deny")
+                        Text(isPlanApproval ? "Reject" : "Deny")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.white.opacity(0.7))
                             .frame(maxWidth: .infinity)
@@ -147,7 +181,9 @@ struct PermissionBubbleView: View {
                             .padding(.vertical, 6)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
-                                    .fill(hasSelection ? TerminalColors.green : TerminalColors.green.opacity(0.6))
+                                    .fill(isPlanApproval
+                                        ? TerminalColors.blue
+                                        : (hasSelection ? TerminalColors.green : TerminalColors.green.opacity(0.6)))
                             )
                     }
                     .buttonStyle(.plain)
@@ -187,6 +223,8 @@ struct PermissionBubbleView: View {
     }
 
     private var approveButtonLabel: String {
+        if isPlanApproval { return "Approve Plan" }
+
         guard let item = questionItems.first else { return "Allow" }
 
         if item.multiSelect {
@@ -236,6 +274,7 @@ struct PermissionBubbleView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(Array(questionItems.enumerated()), id: \.offset) { _, item in
+
                     VStack(alignment: .leading, spacing: 6) {
                         if let header = item.header {
                             Text(header)
@@ -308,30 +347,65 @@ struct PermissionBubbleView: View {
                 }
             }
         }
+        .scrollBounceBehavior(.basedOnSize)
         .frame(maxHeight: 200)
+    }
+
+    // MARK: - Edit Diff Content
+
+    @ViewBuilder
+    private var editDiffContent: some View {
+        if let input = session.activePermission?.toolInput {
+            let stringInput = input.reduce(into: [String: String]()) { dict, pair in
+                if let str = pair.value.value as? String {
+                    dict[pair.key] = str
+                }
+            }
+            EditInputDiffView(input: stringInput)
+        }
+    }
+
+    // MARK: - Plan Prompts Content (ExitPlanMode)
+
+    @ViewBuilder
+    private var planPromptsContent: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Plan needs permission for:")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.white.opacity(0.5))
+
+            ForEach(Array(planAllowedPrompts.enumerated()), id: \.offset) { _, prompt in
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(TerminalColors.blue.opacity(0.6))
+                        .frame(width: 4, height: 4)
+                    Text(prompt)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.8))
+                        .lineLimit(2)
+                }
+            }
+        }
     }
 
     // MARK: - Tool Input Content (generic tools)
 
     @ViewBuilder
     private var toolInputContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(inputLines.enumerated()), id: \.offset) { _, line in
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(line.key)
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.5))
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(inputLines.enumerated()), id: \.offset) { _, line in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(line.key)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.5))
 
-                        Text(line.value)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.8))
-                            .lineLimit(6)
-                    }
+                    Text(line.value)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.8))
+                        .lineLimit(4)
                 }
             }
         }
-        .frame(maxHeight: 150)
     }
 }
 
