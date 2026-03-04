@@ -64,24 +64,26 @@ class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    /// Called when a click lands in the window but outside the bubble content area.
+    /// Used to dismiss the bubble and repost the click to apps behind.
+    var onClickPassThrough: (() -> Void)?
+
     // MARK: - Click-through for areas outside the panel content
 
     override func sendEvent(_ event: NSEvent) {
-        // For mouse events, check if we should pass through
+        // For mouse click events, check if we should pass through
         if event.type == .leftMouseDown || event.type == .leftMouseUp ||
            event.type == .rightMouseDown || event.type == .rightMouseUp {
-            // Get the location in window coordinates
             let locationInWindow = event.locationInWindow
 
             // Check if any view wants to handle this event
             if let contentView = self.contentView,
                contentView.hitTest(locationInWindow) == nil {
-                // No view wants this event - pass it through to windows behind
-                // by temporarily ignoring mouse events and re-posting
+                // No view claims this event — dismiss bubble and repost to windows behind
+                if event.type == .leftMouseDown || event.type == .rightMouseDown {
+                    onClickPassThrough?()
+                }
                 let screenLocation = convertPoint(toScreen: locationInWindow)
-                ignoresMouseEvents = true
-
-                // Re-post the event after a tiny delay
                 DispatchQueue.main.async { [weak self] in
                     self?.repostMouseEvent(event, at: screenLocation)
                 }

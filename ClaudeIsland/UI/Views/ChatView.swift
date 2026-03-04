@@ -12,7 +12,7 @@ struct ChatView: View {
     let sessionId: String
     let initialSession: SessionState
     let sessionMonitor: ClaudeSessionMonitor
-    @ObservedObject var viewModel: NotchViewModel
+    var onExitChat: (() -> Void)?
 
     @State private var inputText: String = ""
     @State private var history: [ChatHistoryItem] = []
@@ -26,11 +26,11 @@ struct ChatView: View {
     @State private var isBottomVisible: Bool = true
     @FocusState private var isInputFocused: Bool
 
-    init(sessionId: String, initialSession: SessionState, sessionMonitor: ClaudeSessionMonitor, viewModel: NotchViewModel) {
+    init(sessionId: String, initialSession: SessionState, sessionMonitor: ClaudeSessionMonitor, onExitChat: (() -> Void)? = nil) {
         self.sessionId = sessionId
         self.initialSession = initialSession
         self.sessionMonitor = sessionMonitor
-        self._viewModel = ObservedObject(wrappedValue: viewModel)
+        self.onExitChat = onExitChat
         self._session = State(initialValue: initialSession)
 
         // Initialize from cache if available (prevents loading flicker on view recreation)
@@ -90,7 +90,7 @@ struct ChatView: View {
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isWaitingForApproval)
-        .animation(nil, value: viewModel.status)
+        .animation(nil, value: session.phase)
         .task {
             // Skip if already loaded (prevents redundant work on view recreation)
             guard !hasLoadedOnce else { return }
@@ -140,7 +140,7 @@ struct ChatView: View {
                 }
             } else if hasLoadedOnce {
                 // Session was loaded but is now gone (removed via /clear) - navigate back
-                viewModel.exitChat()
+                onExitChat?()
             }
         }
         .onReceive(sessionMonitor.$instances) { sessions in
@@ -183,7 +183,7 @@ struct ChatView: View {
 
     private var chatHeader: some View {
         Button {
-            viewModel.exitChat()
+            onExitChat?()
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "chevron.left")
