@@ -176,8 +176,9 @@ def main():
         state["status"] = "waiting_for_input"
 
     elif event == "SubagentStop":
-        # SubagentStop fires when a subagent completes - usually means back to waiting
-        state["status"] = "waiting_for_input"
+        # SubagentStop fires when a subagent completes - parent agent is still running
+        # Don't change status; let the parent agent's own events drive the phase
+        pass
 
     elif event == "SessionStart":
         # New session starts waiting for user input
