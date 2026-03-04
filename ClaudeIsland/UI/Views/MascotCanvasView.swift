@@ -42,8 +42,8 @@ struct MascotCanvasView: View {
     /// Time-of-day accessory for idle crabs (sunglasses have 1-in-5 chance)
     private var idleTimeAccessory: CrabAccessory {
         let hour = Calendar.current.component(.hour, from: Date())
-        if hour >= 22 || hour < 6 { return .nightcap }
-        if hour >= 10 && hour < 16 && idleCrabWearsGlasses { return .sunglasses }
+        if hour >= 20 || hour < 8 { return .nightcap }
+        if hour >= 8 && hour < 20 && idleCrabWearsGlasses { return .sunglasses }
         return .none
     }
 

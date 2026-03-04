@@ -108,8 +108,8 @@ struct MascotView: View {
     /// Time-of-day accessory based on current hour (sunglasses have 1-in-5 chance)
     private var timeAccessory: CrabAccessory {
         let hour = Calendar.current.component(.hour, from: Date())
-        if hour >= 22 || hour < 6 { return .nightcap }
-        if hour >= 10 && hour < 16 && wearsGlasses { return .sunglasses }
+        if hour >= 20 || hour < 8 { return .nightcap }
+        if hour >= 8 && hour < 20 && wearsGlasses { return .sunglasses }
         return .none
     }
 
