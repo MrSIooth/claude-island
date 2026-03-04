@@ -51,7 +51,7 @@ struct MascotCanvasView: View {
         VStack(spacing: 0) {
             // Notch bar with mascots inside
             notchBar
-                .frame(height: max(32, notchRect.height))
+                .frame(height: notchRect.height)
 
             // Hover tooltip
             if let tooltip = viewModel.hoverTooltip, viewModel.activeBubbleSessionId == nil {
@@ -159,7 +159,7 @@ struct MascotCanvasView: View {
     private var notchBar: some View {
         let sessions = visibleSessions
         let barWidth = viewModel.mascotBarWidth(sessionCount: sessions.count)
-        let barHeight = max(32, notchRect.height)
+        let barHeight = notchRect.height
 
         ZStack {
             if sessions.isEmpty {
