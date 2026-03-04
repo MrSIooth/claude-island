@@ -19,6 +19,9 @@ class MascotViewModel: ObservableObject {
     /// Whether the bubble is expanded to show full details
     @Published var isBubbleExpanded: Bool = false
 
+    /// Hovered mascot tooltip (text + x offset from center)
+    @Published var hoverTooltip: (text: String, xOffset: CGFloat)?
+
     /// Current session count — updated by canvas view, used for dynamic bar width in hit testing
     var sessionCount: Int = 0
 
@@ -39,8 +42,22 @@ class MascotViewModel: ObservableObject {
     /// Callback for when global click hits the notch area — passes click screen location
     var onNotchClick: ((CGPoint) -> Void)?
 
+    /// Callback for double-click on a mascot — passes the session
+    var onNotchDoubleClick: ((CGPoint) -> Void)?
+
     /// Callback for right-click on notch (set by canvas view)
     var onNotchRightClick: ((CGPoint) -> Void)?
+
+    /// Callback to resolve a screen location to a tooltip string + mascot x offset
+    var onResolveHover: ((CGPoint) -> (text: String, xOffset: CGFloat)?)?
+
+    /// Double-click detection state
+    private var lastClickTime: Date?
+    private var lastClickLocation: CGPoint?
+
+    /// Pending tooltip (waiting for 2s hover delay)
+    private var hoverDelayTask: Task<Void, Never>?
+    private var pendingHoverText: String?
 
     // MARK: - Initialization
 
@@ -77,6 +94,14 @@ class MascotViewModel: ObservableObject {
                 self?.handleRightMouseDown()
             }
             .store(in: &cancellables)
+
+        // Hover detection for custom tooltips
+        events.mouseLocation
+            .throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
+            .sink { [weak self] location in
+                self?.handleMouseMove(location)
+            }
+            .store(in: &cancellables)
     }
 
     /// Separate global-only monitor for dismissing bubble when user clicks on another app.
@@ -101,7 +126,19 @@ class MascotViewModel: ObservableObject {
     private func handleMouseDown() {
         let location = NSEvent.mouseLocation
         if geometry.isPointInNotch(location, barWidth: currentBarWidth) {
-            onNotchClick?(location)
+            let now = Date()
+            // Detect double-click: two clicks within 0.35s and 20px
+            if let lastTime = lastClickTime, let lastLoc = lastClickLocation,
+               now.timeIntervalSince(lastTime) < 0.35,
+               abs(location.x - lastLoc.x) < 20, abs(location.y - lastLoc.y) < 20 {
+                lastClickTime = nil
+                lastClickLocation = nil
+                onNotchDoubleClick?(location)
+            } else {
+                lastClickTime = now
+                lastClickLocation = location
+                onNotchClick?(location)
+            }
         }
     }
 
@@ -109,6 +146,35 @@ class MascotViewModel: ObservableObject {
         let location = NSEvent.mouseLocation
         if geometry.isPointInNotch(location, barWidth: currentBarWidth) {
             onNotchRightClick?(location)
+        }
+    }
+
+    private func handleMouseMove(_ location: CGPoint) {
+        if geometry.isPointInNotch(location, barWidth: currentBarWidth),
+           let result = onResolveHover?(location) {
+            if hoverTooltip != nil {
+                // Already showing — update in place
+                if hoverTooltip?.text != result.text {
+                    hoverTooltip = result
+                }
+            } else if pendingHoverText != result.text {
+                // Start 2s delay for new hover target
+                pendingHoverText = result.text
+                hoverDelayTask?.cancel()
+                hoverDelayTask = Task { [weak self, result] in
+                    try? await Task.sleep(for: .seconds(2))
+                    guard let self, !Task.isCancelled else { return }
+                    self.hoverTooltip = result
+                }
+            }
+        } else {
+            // Mouse left notch — cancel pending and hide immediately
+            hoverDelayTask?.cancel()
+            hoverDelayTask = nil
+            pendingHoverText = nil
+            if hoverTooltip != nil {
+                hoverTooltip = nil
+            }
         }
     }
 

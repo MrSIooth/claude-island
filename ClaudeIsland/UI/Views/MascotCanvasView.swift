@@ -18,6 +18,8 @@ struct MascotCanvasView: View {
     /// Tracks approval session IDs we've already auto-shown a bubble for.
     /// Prevents re-opening after user dismisses. Cleared when session leaves waitingForApproval.
     @State private var seenApprovalSessionIds: Set<String> = []
+    /// 1-in-10 chance the idle crab wears sunglasses during the day
+    @State private var idleCrabWearsGlasses: Bool = Int.random(in: 0..<10) == 0
 
     private var visibleSessions: [SessionState] {
         let now = Date()
@@ -37,11 +39,33 @@ struct MascotCanvasView: View {
         viewModel.geometry.deviceNotchRect
     }
 
+    /// Time-of-day accessory for idle crabs (sunglasses have 1-in-5 chance)
+    private var idleTimeAccessory: CrabAccessory {
+        let hour = Calendar.current.component(.hour, from: Date())
+        if hour >= 22 || hour < 6 { return .nightcap }
+        if hour >= 10 && hour < 16 && idleCrabWearsGlasses { return .sunglasses }
+        return .none
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Notch bar with mascots inside
             notchBar
                 .frame(height: max(32, notchRect.height))
+
+            // Hover tooltip
+            if let tooltip = viewModel.hoverTooltip, viewModel.activeBubbleSessionId == nil {
+                Text(tooltip.text)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(white: 0.15).opacity(0.95))
+                    .cornerRadius(6)
+                    .offset(x: tooltip.xOffset)
+                    .transition(.opacity)
+                    .padding(.top, 2)
+            }
 
             // Permission bubble below the notch (if active)
             if let activeSessionId = viewModel.activeBubbleSessionId,
@@ -103,9 +127,25 @@ struct MascotCanvasView: View {
                     }
                 }
             }
+            viewModel.onNotchDoubleClick = { clickLocation in
+                let sessions = sessionMonitor.instances.filter { $0.phase != .ended }
+                if let clicked = sessionForClickLocation(clickLocation, sessions: sessions) {
+                    focusTerminal(for: clicked)
+                }
+            }
             viewModel.onNotchRightClick = { [weak viewModel] screenLocation in
                 guard viewModel != nil else { return }
                 showContextMenu(at: screenLocation)
+            }
+            viewModel.onResolveHover = { [weak viewModel] location in
+                guard let viewModel = viewModel else { return nil }
+                let sessions = sessionMonitor.instances.filter { $0.phase != .ended }
+                guard !sessions.isEmpty else { return nil }
+                guard let session = sessionForClickLocation(location, sessions: sessions) else { return nil }
+                let text = MascotView.tooltipText(for: session)
+                guard let index = sessions.firstIndex(where: { $0.sessionId == session.sessionId }) else { return nil }
+                let xOffset = viewModel.mascotXOffset(index: index, total: sessions.count)
+                return (text: text, xOffset: xOffset)
             }
         }
         .onChange(of: sessionMonitor.instances) { _, instances in
@@ -125,21 +165,22 @@ struct MascotCanvasView: View {
             if sessions.isEmpty {
                 if viewModel.hasPhysicalNotch {
                     // On physical notch, show idle crab in the left ear
-                    ClaudeCrabIcon(size: 14)
+                    ClaudeCrabIcon(size: 14, timeAccessory: idleTimeAccessory)
                         .offset(x: -(notchRect.width / 2 + 14))
                 } else {
-                    ClaudeCrabIcon(size: 14)
+                    ClaudeCrabIcon(size: 14, timeAccessory: idleTimeAccessory)
                 }
             } else {
                 ForEach(Array(sessions.enumerated()), id: \.element.stableId) { index, session in
-                    let xOffset = viewModel.mascotXOffset(index: index, total: sessions.count)
+                    let mascotXOffset = viewModel.mascotXOffset(index: index, total: sessions.count)
 
                     MascotView(
                         session: session,
                         viewModel: viewModel,
-                        sessionMonitor: sessionMonitor
+                        sessionMonitor: sessionMonitor,
+                        xOffset: mascotXOffset
                     )
-                    .offset(x: xOffset)
+                    .offset(x: mascotXOffset)
                 }
             }
         }
@@ -198,18 +239,8 @@ struct MascotCanvasView: View {
         let currentIds = Set(waitingForInputSessions.map { $0.stableId })
         let newWaitingIds = currentIds.subtracting(previousWaitingForInputIds)
 
-        if !newWaitingIds.isEmpty {
-            let newlyWaitingSessions = waitingForInputSessions.filter { newWaitingIds.contains($0.stableId) }
-            if let soundName = AppSettings.notificationSound.soundName {
-                Task {
-                    let shouldPlay = await shouldPlayNotificationSound(for: newlyWaitingSessions)
-                    if shouldPlay {
-                        await MainActor.run {
-                            NSSound(named: NSSound.Name(soundName))?.play()
-                        }
-                    }
-                }
-            }
+        if !newWaitingIds.isEmpty && AppSettings.soundEnabled {
+            NSSound(named: "Blow")?.play()
         }
         previousWaitingForInputIds = currentIds
     }
@@ -229,21 +260,17 @@ struct MascotCanvasView: View {
         // Mark all new ones as seen regardless of whether we show them
         seenApprovalSessionIds.formUnion(newApprovalIds)
 
+        // Play notification sound for new approval requests
+        if AppSettings.soundEnabled {
+            NSSound(named: "Pop")?.play()
+        }
+
         // Show the first new one if no bubble is active
         if viewModel.activeBubbleSessionId == nil, let newId = newApprovalIds.first {
             withAnimation {
                 viewModel.showBubble(for: newId)
             }
         }
-    }
-
-    private func shouldPlayNotificationSound(for sessions: [SessionState]) async -> Bool {
-        for session in sessions {
-            guard let pid = session.pid else { return true }
-            let isFocused = await TerminalVisibilityDetector.isSessionFocused(sessionPid: pid)
-            if !isFocused { return true }
-        }
-        return false
     }
 
     // MARK: - Mascot Offset Lookup
@@ -319,24 +346,54 @@ struct MascotCanvasView: View {
         }
     }
 
+    // MARK: - Focus Terminal (Double-Click)
+
+    /// Bring the terminal window for this session to the foreground
+    private func focusTerminal(for session: SessionState) {
+        guard let pid = session.pid else { return }
+
+        // Walk up the process tree to find the terminal app (parent of Claude process)
+        var parentPid = Int32(pid)
+        for _ in 0..<5 {
+            var info = proc_bsdinfo()
+            let size = MemoryLayout<proc_bsdinfo>.size
+            let result = proc_pidinfo(parentPid, PROC_PIDTBSDINFO, 0, &info, Int32(size))
+            guard result > 0 else { break }
+            let ppid = Int32(info.pbi_ppid)
+            if ppid <= 1 { break }
+            // Check if the parent is a GUI app we can activate
+            if let app = NSRunningApplication(processIdentifier: ppid), app.activationPolicy == .regular {
+                app.activate()
+                return
+            }
+            parentPid = ppid
+        }
+
+        // Fallback: try to activate the immediate parent
+        let ppid = getParentPid(of: Int32(pid))
+        if ppid > 1, let app = NSRunningApplication(processIdentifier: ppid) {
+            app.activate()
+        }
+    }
+
+    private func getParentPid(of pid: Int32) -> Int32 {
+        var info = proc_bsdinfo()
+        let size = MemoryLayout<proc_bsdinfo>.size
+        let result = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(size))
+        return result > 0 ? Int32(info.pbi_ppid) : 0
+    }
+
     // MARK: - Context Menu (Right-Click)
 
     private func showContextMenu(at screenLocation: CGPoint) {
         let menu = NSMenu()
 
-        // Sound submenu
-        let soundMenu = NSMenu()
-        for sound in NotificationSound.allCases {
-            let item = NSMenuItem(title: sound.rawValue, action: #selector(ContextMenuTarget.soundSelected(_:)), keyEquivalent: "")
-            item.target = ContextMenuTarget.shared
-            item.representedObject = sound
-            if AppSettings.notificationSound == sound {
-                item.state = .on
-            }
-            soundMenu.addItem(item)
+        // Sound toggle
+        let soundItem = NSMenuItem(title: "Sound", action: #selector(ContextMenuTarget.toggleSound), keyEquivalent: "")
+        soundItem.target = ContextMenuTarget.shared
+        if AppSettings.soundEnabled {
+            soundItem.state = .on
         }
-        let soundItem = NSMenuItem(title: "Notification Sound", action: nil, keyEquivalent: "")
-        soundItem.submenu = soundMenu
         menu.addItem(soundItem)
 
         // Screen submenu
@@ -397,12 +454,8 @@ import ServiceManagement
 private class ContextMenuTarget: NSObject {
     static let shared = ContextMenuTarget()
 
-    @objc func soundSelected(_ sender: NSMenuItem) {
-        guard let sound = sender.representedObject as? NotificationSound else { return }
-        AppSettings.notificationSound = sound
-        if let name = sound.soundName {
-            NSSound(named: NSSound.Name(name))?.play()
-        }
+    @objc func toggleSound() {
+        AppSettings.soundEnabled.toggle()
     }
 
     @objc func autoScreenSelected() {

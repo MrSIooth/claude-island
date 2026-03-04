@@ -8,21 +8,60 @@
 import Combine
 import SwiftUI
 
+/// Time-of-day accessories for the crab
+enum CrabAccessory {
+    case nightcap    // 22:00–05:59
+    case sunglasses  // 10:00–15:59
+    case none
+}
+
+/// Mood expressions for the crab's eyes
+enum CrabMood {
+    case normal     // standard square eyes
+    case question   // "?" drawn on face (AskUserQuestion)
+    case alert      // "!" drawn on face (tool permission)
+    case happy      // ★_★ star eyes (task completion)
+    case wideEyes   // O_O wide circular eyes (error/interrupt)
+    case sleeping   // flat closed lines
+    case sweatDrop  // normal eyes + sweat drop (compacting/retrying)
+}
+
 struct ClaudeCrabIcon: View {
     let size: CGFloat
     let color: Color
     var animateLegs: Bool = false
-    var sleeping: Bool = false
+    var mood: CrabMood = .normal
+    /// Eye shift for facing direction: negative = look left, positive = look right, 0 = center
+    var eyeShift: CGFloat = 0
+    /// Currently active tool name (shown as held item during processing)
+    var currentTool: String? = nil
+    /// Time-of-day accessory
+    var timeAccessory: CrabAccessory = .none
 
     @State private var bookPhase: Int = 0
 
+    /// Pencil sway offset for writing animation (shared between legs and pencil drawing)
+    private var pencilSway: CGFloat {
+        switch bookPhase {
+        case 0, 1: return 0
+        case 2, 3: return 4
+        case 4: return 6
+        case 5, 6: return 2
+        case 7: return -2
+        default: return 0
+        }
+    }
+
     private let animTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
-    init(size: CGFloat = 16, color: Color = Color(red: 0.85, green: 0.47, blue: 0.34), animateLegs: Bool = false, sleeping: Bool = false) {
+    init(size: CGFloat = 16, color: Color = Color(red: 0.85, green: 0.47, blue: 0.34), animateLegs: Bool = false, mood: CrabMood = .normal, eyeShift: CGFloat = 0, currentTool: String? = nil, timeAccessory: CrabAccessory = .none) {
         self.size = size
         self.color = color
         self.animateLegs = animateLegs
-        self.sleeping = sleeping
+        self.mood = mood
+        self.eyeShift = eyeShift
+        self.currentTool = currentTool
+        self.timeAccessory = timeAccessory
     }
 
     var body: some View {
@@ -44,8 +83,13 @@ struct ClaudeCrabIcon: View {
             fill(CGRect(x: 6, y: 39, width: 6, height: 13), color)
             fill(CGRect(x: 54, y: 39, width: 6, height: 13), color)
 
-            if animateLegs {
-                // Inner legs shortened — crab "arms" holding the book
+            if animateLegs && (currentTool == "Edit" || currentTool == "Write") {
+                // Inner legs reach down toward the pencil, following sway
+                let legSway = pencilSway
+                fill(CGRect(x: 20 + legSway, y: 39, width: 6, height: 10), color) // left arm
+                fill(CGRect(x: 28 + legSway, y: 39, width: 6, height: 10), color) // right arm
+            } else if animateLegs {
+                // Inner legs shortened — crab "arms" holding the item
                 fill(CGRect(x: 18, y: 39, width: 6, height: 5), color)
                 fill(CGRect(x: 42, y: 39, width: 6, height: 5), color)
             } else {
@@ -57,41 +101,85 @@ struct ClaudeCrabIcon: View {
             // Main body
             fill(CGRect(x: 6, y: 0, width: 54, height: 39), color)
 
-            // Book (processing state only)
+            // Held item (processing state only) — dispatch on tool name
             if animateLegs {
-                let pageColor = Color(white: 0.82)
-                let spineColor = Color(red: 0.35, green: 0.22, blue: 0.12)
-                let flipColor = Color(white: 0.95)
-                let bookY: CGFloat = 34
-                let bookH: CGFloat = 18
-
-                // Left page
-                fill(CGRect(x: 16, y: bookY, width: 16, height: bookH), pageColor)
-                // Right page
-                fill(CGRect(x: 36, y: bookY, width: 16, height: bookH), pageColor)
-                // Spine
-                fill(CGRect(x: 32, y: bookY - 2, width: 4, height: bookH + 4), spineColor)
-
-                // Turning page — arcs from right over the spine to the left
-                switch bookPhase {
-                case 0, 1: break // rest
-                case 2: fill(CGRect(x: 37, y: bookY - 4, width: 14, height: bookH), flipColor)
-                case 3: fill(CGRect(x: 35, y: bookY - 7, width: 8,  height: bookH), flipColor)
-                case 4: fill(CGRect(x: 32, y: bookY - 9, width: 4,  height: bookH), flipColor)
-                case 5: fill(CGRect(x: 25, y: bookY - 7, width: 8,  height: bookH), flipColor)
-                case 6: fill(CGRect(x: 17, y: bookY - 4, width: 14, height: bookH), flipColor)
-                case 7: break // rest
-                default: break
-                }
+                drawHeldItem(fill: fill, tool: currentTool)
             }
 
-            // Eyes — flat lines when sleeping, squares when awake
-            if sleeping {
-                fill(CGRect(x: 12, y: 16, width: 8, height: 2), .black)
-                fill(CGRect(x: 46, y: 16, width: 8, height: 2), .black)
-            } else {
-                fill(CGRect(x: 12, y: 13, width: 6, height: 6.5), .black)
-                fill(CGRect(x: 48, y: 13, width: 6, height: 6.5), .black)
+            // Nightcap — drawn after body, before eyes
+            if timeAccessory == .nightcap {
+                drawNightcap(fill: fill)
+            }
+
+            // Eyes — mood-dependent shapes, shifted for facing direction
+            let s = eyeShift
+            let fc: Color = .black  // face glyph color
+            switch mood {
+            case .normal:
+                fill(CGRect(x: 12 + s, y: 13, width: 6, height: 6.5), fc)
+                fill(CGRect(x: 48 + s, y: 13, width: 6, height: 6.5), fc)
+            case .question:
+                // "?" drawn centered on face — pixel art question mark
+                // Top curve of ?
+                fill(CGRect(x: 24, y: 5, width: 18, height: 4), fc)
+                fill(CGRect(x: 21, y: 9, width: 6, height: 4), fc)
+                fill(CGRect(x: 39, y: 9, width: 6, height: 4), fc)
+                // Right descender
+                fill(CGRect(x: 36, y: 13, width: 6, height: 4), fc)
+                // Middle stem
+                fill(CGRect(x: 30, y: 17, width: 6, height: 6), fc)
+                // Dot
+                fill(CGRect(x: 30, y: 27, width: 6, height: 5), fc)
+            case .alert:
+                // "!" drawn centered on face — pixel art exclamation mark
+                // Tall stem
+                fill(CGRect(x: 30, y: 5, width: 6, height: 18), fc)
+                // Dot
+                fill(CGRect(x: 30, y: 27, width: 6, height: 5), fc)
+            case .happy:
+                // ★_★ star eyes — pixel art 4-pointed stars
+                // Left star: center + 4 points
+                fill(CGRect(x: 14 + s, y: 14, width: 4, height: 4), fc)   // center
+                fill(CGRect(x: 15 + s, y: 11, width: 2, height: 3), fc)   // top
+                fill(CGRect(x: 15 + s, y: 18, width: 2, height: 3), fc)   // bottom
+                fill(CGRect(x: 11 + s, y: 15, width: 3, height: 2), fc)   // left
+                fill(CGRect(x: 18 + s, y: 15, width: 3, height: 2), fc)   // right
+                // Right star: center + 4 points
+                fill(CGRect(x: 47 + s, y: 14, width: 4, height: 4), fc)   // center
+                fill(CGRect(x: 48 + s, y: 11, width: 2, height: 3), fc)   // top
+                fill(CGRect(x: 48 + s, y: 18, width: 2, height: 3), fc)   // bottom
+                fill(CGRect(x: 44 + s, y: 15, width: 3, height: 2), fc)   // left
+                fill(CGRect(x: 51 + s, y: 15, width: 3, height: 2), fc)   // right
+            case .wideEyes:
+                // O_O — wide circular eyes (larger than normal)
+                // Left eye — hollow square (outline)
+                fill(CGRect(x: 10 + s, y: 10, width: 12, height: 3), fc)  // top
+                fill(CGRect(x: 10 + s, y: 19, width: 12, height: 3), fc)  // bottom
+                fill(CGRect(x: 10 + s, y: 13, width: 3, height: 6), fc)   // left
+                fill(CGRect(x: 19 + s, y: 13, width: 3, height: 6), fc)   // right
+                // Right eye — hollow square (outline)
+                fill(CGRect(x: 44 + s, y: 10, width: 12, height: 3), fc)  // top
+                fill(CGRect(x: 44 + s, y: 19, width: 12, height: 3), fc)  // bottom
+                fill(CGRect(x: 44 + s, y: 13, width: 3, height: 6), fc)   // left
+                fill(CGRect(x: 53 + s, y: 13, width: 3, height: 6), fc)   // right
+            case .sleeping:
+                // Flat closed lines, lower
+                fill(CGRect(x: 12 + s, y: 16, width: 8, height: 2), fc)
+                fill(CGRect(x: 46 + s, y: 16, width: 8, height: 2), fc)
+            case .sweatDrop:
+                // Normal eyes + sweat drop on right side
+                fill(CGRect(x: 12 + s, y: 13, width: 6, height: 6.5), fc)
+                fill(CGRect(x: 48 + s, y: 13, width: 6, height: 6.5), fc)
+                // Sweat drop — small teardrop shape on upper-right of body
+                let dropColor = Color(red: 0.4, green: 0.7, blue: 1.0)
+                fill(CGRect(x: 56, y: 4, width: 4, height: 3), dropColor)
+                fill(CGRect(x: 55, y: 7, width: 6, height: 6), dropColor)
+                fill(CGRect(x: 56, y: 13, width: 4, height: 3), dropColor)
+            }
+
+            // Sunglasses — drawn after eyes to cover them (skip for ? and ! faces)
+            if timeAccessory == .sunglasses && mood != .question && mood != .alert {
+                drawSunglasses(fill: fill, eyeShift: s)
             }
         }
         .frame(width: size * (66.0 / 52.0), height: size)
@@ -100,6 +188,112 @@ struct ClaudeCrabIcon: View {
                 bookPhase = (bookPhase + 1) % 8
             }
         }
+    }
+
+    // MARK: - Held Item Drawing
+
+    /// Draw the item the crab holds based on active tool
+    private func drawHeldItem(fill: (CGRect, Color) -> Void, tool: String?) {
+        switch tool {
+        case "Edit", "Write":
+            drawPencil(fill: fill)
+        case "WebFetch", "WebSearch":
+            drawGlobe(fill: fill)
+        default:
+            drawBook(fill: fill)
+        }
+    }
+
+    private func drawBook(fill: (CGRect, Color) -> Void) {
+        let pageColor = Color(white: 0.82)
+        let spineColor = Color(red: 0.35, green: 0.22, blue: 0.12)
+        let flipColor = Color(white: 0.95)
+        let bookY: CGFloat = 34
+        let bookH: CGFloat = 18
+
+        fill(CGRect(x: 16, y: bookY, width: 16, height: bookH), pageColor)
+        fill(CGRect(x: 36, y: bookY, width: 16, height: bookH), pageColor)
+        fill(CGRect(x: 32, y: bookY - 2, width: 4, height: bookH + 4), spineColor)
+
+        switch bookPhase {
+        case 0, 1: break
+        case 2: fill(CGRect(x: 37, y: bookY - 4, width: 14, height: bookH), flipColor)
+        case 3: fill(CGRect(x: 35, y: bookY - 7, width: 8,  height: bookH), flipColor)
+        case 4: fill(CGRect(x: 32, y: bookY - 9, width: 4,  height: bookH), flipColor)
+        case 5: fill(CGRect(x: 25, y: bookY - 7, width: 8,  height: bookH), flipColor)
+        case 6: fill(CGRect(x: 17, y: bookY - 4, width: 14, height: bookH), flipColor)
+        case 7: break
+        default: break
+        }
+    }
+
+    private func drawPencil(fill: (CGRect, Color) -> Void) {
+        let shaft = Color(red: 1.0, green: 0.85, blue: 0.2)  // yellow
+        let tip = Color(red: 0.2, green: 0.2, blue: 0.2)      // dark gray
+        let eraser = Color(red: 0.95, green: 0.55, blue: 0.65) // pink
+        let band = Color(red: 0.7, green: 0.7, blue: 0.7)     // metal band
+        let ink = Color(red: 0.3, green: 0.3, blue: 0.8)       // writing marks
+        let sway = pencilSway
+
+        // Pencil — larger, angled ~45°, animated with sway
+        fill(CGRect(x: 14 + sway, y: 52, width: 8, height: 6), tip)     // tip
+        fill(CGRect(x: 17 + sway, y: 44, width: 8, height: 8), shaft)   // lower shaft
+        fill(CGRect(x: 22 + sway, y: 36, width: 8, height: 8), shaft)   // mid shaft
+        fill(CGRect(x: 27 + sway, y: 30, width: 8, height: 6), shaft)   // upper shaft
+        fill(CGRect(x: 32 + sway, y: 27, width: 8, height: 5), band)    // metal band
+        fill(CGRect(x: 36 + sway, y: 22, width: 8, height: 5), eraser)  // eraser
+
+        // Writing marks below the tip — scribble trail
+        let markPhase = bookPhase % 4
+        if markPhase >= 1 { fill(CGRect(x: 10, y: 58, width: 12, height: 3), ink) }
+        if markPhase >= 2 { fill(CGRect(x: 24, y: 61, width: 14, height: 3), ink) }
+        if markPhase >= 3 { fill(CGRect(x: 14, y: 64, width: 16, height: 3), ink) }
+    }
+
+    private func drawGlobe(fill: (CGRect, Color) -> Void) {
+        let line = Color(red: 0.4, green: 0.65, blue: 1.0)
+
+        // Circle outline (approximated with pixel blocks)
+        fill(CGRect(x: 28, y: 34, width: 12, height: 3), line)  // top
+        fill(CGRect(x: 28, y: 51, width: 12, height: 3), line)  // bottom
+        fill(CGRect(x: 22, y: 37, width: 3, height: 14), line)  // left
+        fill(CGRect(x: 43, y: 37, width: 3, height: 14), line)  // right
+        // Horizontal equator
+        fill(CGRect(x: 22, y: 42, width: 24, height: 3), line)
+        // Vertical meridian
+        fill(CGRect(x: 32, y: 34, width: 3, height: 20), line)
+    }
+
+    // MARK: - Accessory Drawing
+
+    private func drawNightcap(fill: (CGRect, Color) -> Void) {
+        let capColor = Color(red: 0.15, green: 0.15, blue: 0.45)   // dark blue
+        let brimColor = Color(red: 0.1, green: 0.1, blue: 0.35)    // darker brim
+        let pompom = Color.white
+
+        // Brim along the top of the head
+        fill(CGRect(x: 30, y: -2, width: 28, height: 4), brimColor)
+        // Cap body — droops to the right
+        fill(CGRect(x: 36, y: -8, width: 18, height: 6), capColor)
+        fill(CGRect(x: 44, y: -14, width: 14, height: 6), capColor)
+        fill(CGRect(x: 50, y: -19, width: 10, height: 5), capColor)
+        // Pompom at drooping tip
+        fill(CGRect(x: 56, y: -23, width: 6, height: 6), pompom)
+    }
+
+    private func drawSunglasses(fill: (CGRect, Color) -> Void, eyeShift s: CGFloat) {
+        let lens = Color(red: 0.08, green: 0.08, blue: 0.12)  // very dark lens
+        let frame = Color(white: 0.4)                           // gray frame
+
+        // Left lens
+        fill(CGRect(x: 8 + s, y: 11, width: 16, height: 10), lens)
+        // Right lens
+        fill(CGRect(x: 42 + s, y: 11, width: 16, height: 10), lens)
+        // Bridge connecting lenses
+        fill(CGRect(x: 24 + s, y: 13, width: 18, height: 4), frame)
+        // Frame top edge
+        fill(CGRect(x: 8 + s, y: 10, width: 16, height: 2), frame)
+        fill(CGRect(x: 42 + s, y: 10, width: 16, height: 2), frame)
     }
 }
 
@@ -179,5 +373,80 @@ struct ReadyForInputIndicatorIcon: View {
         }
         .frame(width: size, height: size)
     }
+}
+
+// MARK: - Preview
+
+#Preview("Crab Moods") {
+    let moods: [(CrabMood, String, Color)] = [
+        (.normal, "Normal", Color(red: 0.85, green: 0.47, blue: 0.34)),
+        (.question, "Question", TerminalColors.amber),
+        (.alert, "Alert", TerminalColors.amber),
+        (.happy, "Stars", TerminalColors.green),
+        (.wideEyes, "Wide Eyes", Color.red.opacity(0.7)),
+        (.sleeping, "Sleeping", Color(red: 0.85, green: 0.47, blue: 0.34)),
+        (.sweatDrop, "Sweat", TerminalColors.cyan),
+    ]
+
+    VStack(spacing: 24) {
+        HStack(spacing: 32) {
+            ForEach(Array(moods.enumerated()), id: \.offset) { _, item in
+                VStack(spacing: 8) {
+                    ClaudeCrabIcon(size: 48, color: item.2, mood: item.0)
+                    Text(item.1).font(.caption).foregroundColor(.white)
+                }
+            }
+        }
+        Divider()
+        HStack(spacing: 20) {
+            ForEach(Array(moods.enumerated()), id: \.offset) { _, item in
+                ClaudeCrabIcon(size: 16, color: item.2, mood: item.0)
+            }
+        }
+        Divider()
+        HStack(spacing: 24) {
+            VStack(spacing: 4) {
+                ClaudeCrabIcon(size: 48, color: .orange, eyeShift: -3)
+                Text("Look Left").font(.caption).foregroundColor(.white)
+            }
+            VStack(spacing: 4) {
+                ClaudeCrabIcon(size: 48, color: .orange, eyeShift: 0)
+                Text("Center").font(.caption).foregroundColor(.white)
+            }
+            VStack(spacing: 4) {
+                ClaudeCrabIcon(size: 48, color: .orange, eyeShift: 3)
+                Text("Look Right").font(.caption).foregroundColor(.white)
+            }
+        }
+        Divider()
+        // Tool icons while processing
+        HStack(spacing: 24) {
+            let tools: [(String?, String)] = [
+                (nil, "Book"),
+                ("Edit", "Pencil"),
+                ("WebFetch", "Globe"),
+            ]
+            ForEach(Array(tools.enumerated()), id: \.offset) { _, item in
+                VStack(spacing: 4) {
+                    ClaudeCrabIcon(size: 48, color: Color(red: 0.85, green: 0.47, blue: 0.34), animateLegs: true, currentTool: item.0)
+                    Text(item.1).font(.caption).foregroundColor(.white)
+                }
+            }
+        }
+        Divider()
+        // Time accessories
+        HStack(spacing: 32) {
+            VStack(spacing: 4) {
+                ClaudeCrabIcon(size: 48, color: Color(red: 0.85, green: 0.47, blue: 0.34), timeAccessory: .nightcap)
+                Text("Nightcap").font(.caption).foregroundColor(.white)
+            }
+            VStack(spacing: 4) {
+                ClaudeCrabIcon(size: 48, color: Color(red: 0.85, green: 0.47, blue: 0.34), timeAccessory: .sunglasses)
+                Text("Sunglasses").font(.caption).foregroundColor(.white)
+            }
+        }
+    }
+    .padding(40)
+    .background(Color.black)
 }
 
