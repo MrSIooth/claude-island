@@ -42,6 +42,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Mixpanel.initialize(token: "49814c1436104ed108f3fc4735228496")
+        mixpanelInitialized = true
 
         let distinctId = getOrCreateDistinctId()
         Mixpanel.mainInstance().identify(distinctId: distinctId)
@@ -91,8 +92,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         _ = windowManager?.setupNotchWindow()
     }
 
+    private var mixpanelInitialized = false
+
     func applicationWillTerminate(_ notification: Notification) {
-        Mixpanel.mainInstance().flush()
+        if mixpanelInitialized {
+            Mixpanel.mainInstance().flush()
+        }
         updateCheckTimer?.invalidate()
         screenObserver = nil
     }
