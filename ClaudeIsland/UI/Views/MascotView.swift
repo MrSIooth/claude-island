@@ -50,7 +50,7 @@ struct MascotView: View {
         case .waitingForApproval:
             return TerminalColors.amber
         case .waitingForInput:
-            return TerminalColors.green
+            return Color(red: 0.85, green: 0.47, blue: 0.34)
         case .idle:
             return Color(red: 0.85, green: 0.47, blue: 0.34)
         case .compacting:
@@ -62,6 +62,10 @@ struct MascotView: View {
 
     private var animateLegs: Bool {
         session.phase == .processing
+    }
+
+    private var showTrophy: Bool {
+        session.phase == .waitingForInput
     }
 
     private var crabMood: CrabMood {
@@ -90,7 +94,7 @@ struct MascotView: View {
         case .waitingForApproval:
             return TerminalColors.amber
         case .waitingForInput:
-            return TerminalColors.green
+            return TerminalColors.amber
         default:
             return nil
         }
@@ -182,7 +186,7 @@ struct MascotView: View {
                 ParticleExplosionView()
             }
 
-            ClaudeCrabIcon(size: mascotSize, color: crabColor, animateLegs: animateLegs, mood: crabMood, eyeShift: eyeShift, currentTool: currentToolName, timeAccessory: timeAccessory)
+            ClaudeCrabIcon(size: mascotSize, color: crabColor, animateLegs: animateLegs, mood: crabMood, eyeShift: eyeShift, currentTool: currentToolName, timeAccessory: timeAccessory, showTrophy: showTrophy)
                 .opacity(mascotOpacity)
                 .shadow(color: glowColor?.opacity(0.6) ?? .clear, radius: 6)
 
@@ -448,11 +452,11 @@ struct ParticleExplosionView: View {
     private let particles: [(angle: Double, distance: CGFloat, size: CGFloat, color: Color)] = {
         var result: [(Double, CGFloat, CGFloat, Color)] = []
         let colors: [Color] = [
-            TerminalColors.green,
-            TerminalColors.green.opacity(0.7),
+            TerminalColors.amber,
+            Color(red: 1.0, green: 0.84, blue: 0.0),
             .white,
             .white.opacity(0.8),
-            TerminalColors.amber,
+            Color(red: 1.0, green: 0.95, blue: 0.5),
         ]
         for i in 0..<8 {
             let angle = Double(i) * 45.0 + Double.random(in: -15...15)

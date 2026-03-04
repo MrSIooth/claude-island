@@ -37,6 +37,8 @@ struct ClaudeCrabIcon: View {
     var currentTool: String? = nil
     /// Time-of-day accessory
     var timeAccessory: CrabAccessory = .none
+    /// Show trophy (task completion)
+    var showTrophy: Bool = false
 
     @State private var bookPhase: Int = 0
 
@@ -54,7 +56,7 @@ struct ClaudeCrabIcon: View {
 
     private let animTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
-    init(size: CGFloat = 16, color: Color = Color(red: 0.85, green: 0.47, blue: 0.34), animateLegs: Bool = false, mood: CrabMood = .normal, eyeShift: CGFloat = 0, currentTool: String? = nil, timeAccessory: CrabAccessory = .none) {
+    init(size: CGFloat = 16, color: Color = Color(red: 0.85, green: 0.47, blue: 0.34), animateLegs: Bool = false, mood: CrabMood = .normal, eyeShift: CGFloat = 0, currentTool: String? = nil, timeAccessory: CrabAccessory = .none, showTrophy: Bool = false) {
         self.size = size
         self.color = color
         self.animateLegs = animateLegs
@@ -62,6 +64,7 @@ struct ClaudeCrabIcon: View {
         self.eyeShift = eyeShift
         self.currentTool = currentTool
         self.timeAccessory = timeAccessory
+        self.showTrophy = showTrophy
     }
 
     /// Extra internal-coord units above the body for accessories (nightcap extends to y ≈ -23)
@@ -94,7 +97,7 @@ struct ClaudeCrabIcon: View {
                 let legSway = pencilSway
                 fill(CGRect(x: 20 + legSway, y: 39, width: 6, height: 10), color) // left arm
                 fill(CGRect(x: 28 + legSway, y: 39, width: 6, height: 10), color) // right arm
-            } else if animateLegs {
+            } else if animateLegs || showTrophy {
                 // Inner legs shortened — crab "arms" holding the item
                 fill(CGRect(x: 18, y: 39, width: 6, height: 5), color)
                 fill(CGRect(x: 42, y: 39, width: 6, height: 5), color)
@@ -110,6 +113,11 @@ struct ClaudeCrabIcon: View {
             // Held item (processing state only) — dispatch on tool name
             if animateLegs {
                 drawHeldItem(fill: fill, tool: currentTool)
+            }
+
+            // Trophy (task completion)
+            if showTrophy {
+                drawTrophy(fill: fill)
             }
 
             // Nightcap — drawn after body, before eyes
@@ -270,6 +278,34 @@ struct ClaudeCrabIcon: View {
         fill(CGRect(x: 32, y: 34, width: 3, height: 20), line)
     }
 
+    private func drawTrophy(fill: (CGRect, Color) -> Void) {
+        let gold = Color(red: 1.0, green: 0.84, blue: 0.0)
+        let darkGold = Color(red: 0.85, green: 0.65, blue: 0.0)
+        let shine = Color(red: 1.0, green: 0.95, blue: 0.5)
+
+        // Cup — wider at top, tapers down
+        fill(CGRect(x: 20, y: 34, width: 26, height: 4), gold)       // rim
+        fill(CGRect(x: 22, y: 38, width: 22, height: 5), gold)       // upper cup
+        fill(CGRect(x: 26, y: 43, width: 14, height: 3), gold)       // taper
+
+        // Handles
+        fill(CGRect(x: 14, y: 36, width: 6, height: 3), darkGold)    // left top
+        fill(CGRect(x: 12, y: 39, width: 3, height: 4), darkGold)    // left side
+        fill(CGRect(x: 14, y: 43, width: 6, height: 3), darkGold)    // left bottom
+        fill(CGRect(x: 46, y: 36, width: 6, height: 3), darkGold)    // right top
+        fill(CGRect(x: 51, y: 39, width: 3, height: 4), darkGold)    // right side
+        fill(CGRect(x: 46, y: 43, width: 6, height: 3), darkGold)    // right bottom
+
+        // Stem
+        fill(CGRect(x: 30, y: 46, width: 6, height: 3), darkGold)
+
+        // Base
+        fill(CGRect(x: 24, y: 49, width: 18, height: 3), darkGold)
+
+        // Shine highlight on cup
+        fill(CGRect(x: 23, y: 35, width: 3, height: 6), shine)
+    }
+
     // MARK: - Accessory Drawing
 
     private func drawNightcap(fill: (CGRect, Color) -> Void) {
@@ -390,7 +426,7 @@ struct ReadyForInputIndicatorIcon: View {
         (.normal, "Normal", Color(red: 0.85, green: 0.47, blue: 0.34)),
         (.question, "Question", TerminalColors.amber),
         (.alert, "Alert", TerminalColors.amber),
-        (.happy, "Stars", TerminalColors.green),
+        (.happy, "Stars", Color(red: 0.85, green: 0.47, blue: 0.34)),
         (.wideEyes, "Wide Eyes", Color.red.opacity(0.7)),
         (.sleeping, "Sleeping", Color(red: 0.85, green: 0.47, blue: 0.34)),
         (.sweatDrop, "Sweat", TerminalColors.cyan),
@@ -439,6 +475,10 @@ struct ReadyForInputIndicatorIcon: View {
                     ClaudeCrabIcon(size: 48, color: Color(red: 0.85, green: 0.47, blue: 0.34), animateLegs: true, currentTool: item.0)
                     Text(item.1).font(.caption).foregroundColor(.white)
                 }
+            }
+            VStack(spacing: 4) {
+                ClaudeCrabIcon(size: 48, color: Color(red: 0.85, green: 0.47, blue: 0.34), mood: .happy, showTrophy: true)
+                Text("Trophy").font(.caption).foregroundColor(.white)
             }
         }
         Divider()
